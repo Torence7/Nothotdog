@@ -116,13 +116,12 @@ const EvaluationComponent = () => {
   const handleSelectGroup = (groupId) => {
     console.log('Selected group ID:', groupId);
     // Here you can handle what happens when a group is selected
-    // e.g., fetch tests for the selected group
   };
   
 
   useEffect(() => {
     fetchTests(authFetch, setTests, setError);
-  }, []); // Ensure this useEffect runs only once on mount
+  }, []); // make sure this useEffect block runs only once on mount
   
   
   const b64toBlob = (b64Data, contentType = '', sliceSize = 512) => {
@@ -466,8 +465,8 @@ const EvaluationComponent = () => {
         }),
       });
 
-      if (response.ok) {
-        const result = await response.json();
+      if (response) {
+        const result = await response;
         const newResults = [...results];
 
         newResults[index] = result.test_result; // Assuming the API returns a "result" field with "Pass" or "Fail"

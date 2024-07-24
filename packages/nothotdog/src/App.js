@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import './App.css';
+import './css/App.css';
 import WebSocketComponent from './WebSocketComponent';
 import RecordedTests from './RecordedTestsComponent';
 import ConfigurationComponent from './ConfigurationComponent';
