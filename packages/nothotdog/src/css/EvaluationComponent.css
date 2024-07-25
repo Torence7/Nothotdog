@@ -31,7 +31,7 @@
 }
 
 .button {
-  padding: 10px 20px;
+  padding: 6px 10px;
   font-size: 16px;
   cursor: pointer;
   border: none;
@@ -97,7 +97,7 @@
 
 .conversation-row {
   display: grid;
-  grid-template-columns: auto 1fr 1.5fr 2fr 1fr 1fr auto; /* Adjusted widths to accommodate delete button */
+  grid-template-columns: 1fr 1fr 1.5fr 1fr 1fr 1fr auto; /* Adjusted widths to accommodate delete button */
   align-items: self-start; /* Vertically align items */
   gap: 20px;
   padding: 35px 15px;
@@ -179,14 +179,14 @@
 }
 
 .result-indicator.pass {
-  padding: 5px 10px;
+  padding: 7px 10px;
   background-color: rgb(211, 240, 228);
   color: rgb(76, 175, 80);
   border: 1px solid green;
 }
 
 .result-indicator.fail {
-  padding: 10px;
+  padding: 7px 10px;
   background-color: rgb(253, 220, 222);
   color: maroon;
   border: 1px solid red;
