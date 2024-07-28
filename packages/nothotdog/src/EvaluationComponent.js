@@ -62,6 +62,9 @@ const EvaluationComponent = () => {
   const [latencies, setLatencies] = useState([]);
   const [testGroups, setTestGroups] = useState([]);
 
+  const [evaluationStatus, setEvaluationStatus] = useState('');
+  const [selectedGroup, setSelectedGroup] = useState(null);
+
   const handleSaveGroup = async (data) => {
     return await authFetch('api/groups', {
       method: 'POST',
@@ -73,10 +76,22 @@ const EvaluationComponent = () => {
   };
 
   const handleGroupSelect = (group) => {
+    setSelectedGroup(group);
     clearConversationRows();
     group.voices.forEach(voice => loadVoiceAsConversationRow(voice));
   };
 
+  const handleEvaluateAll = () => {
+    if (!selectedGroup) {
+      alert("Please select a group first");
+      return;
+    }
+    // Mock evaluation
+    setEvaluationStatus('Evaluating...');
+    setTimeout(() => {
+      setEvaluationStatus('FAIL');
+    }, 1000); // Simulate a delay
+  };
   const handleVoiceSelect = (voice) => {
     clearConversationRows();
     loadVoiceAsConversationRow(voice);
@@ -540,10 +555,10 @@ const EvaluationComponent = () => {
 
   return (
     <div className="evaluation-container">
-      <TestGroupSidebar 
+       <TestGroupSidebar 
         testGroups={testGroups} 
-        onSelectGroup={handleSelectGroup} 
-        onGroupSelect={handleGroupSelect}
+        onSelectGroup={handleGroupSelect} 
+        onGroupSelect={handleGroupSelect} 
         onSaveGroup={handleSaveGroup}
         projectId={projectId}
         authFetch={authFetch} 
@@ -655,7 +670,28 @@ const EvaluationComponent = () => {
       </div>
       <hr />
       <div className="transcript-box">
-  <h3>Conversations</h3>
+       <h3>Conversations</h3>
+
+       {selectedGroup && (
+          <div className="group-evaluation-section">
+          <div>{selectedGroup ? `Selected Group: ${selectedGroup.name}` : 'No group selected'}</div>
+            <div class="group-evaluate">
+              <button 
+                className="button semi-primary" 
+                onClick={handleEvaluateAll}
+                disabled={!selectedGroup}
+              >
+                Evaluate All
+              </button>
+              {evaluationStatus && (
+                <div className="evaluation-status">
+                  Evaluation Status: <span className="result-indicator fail">{evaluationStatus}</span>
+                </div>
+              )}
+            </div>
+        </div>
+        )}
+  
   <button className="add-row-button" onClick={addConversationRow}>+</button>
   <DragDropContext onDragEnd={onDragEnd}>
   <StrictModeDroppable droppableId="droppable-conversations">
