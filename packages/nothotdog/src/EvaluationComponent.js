@@ -9,6 +9,11 @@ import { DragDropContext, Draggable, Droppable } from 'react-beautiful-dnd';
 import AudioPlayer from './AudioPlayer';
 import fetchTests from './fetchTests'; // Import fetchTests
 import TestGroupSidebar from './TestGroupSideBar';
+import { 
+  b64toBlob, 
+  capitalizeFirstLetter,
+  evaluationMapping
+} from './utils';
 
 const StrictModeDroppable = ({ children, ...props }) => {
   const [enabled, setEnabled] = useState(false);
@@ -55,8 +60,6 @@ const EvaluationComponent = () => {
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(null);
   const [latencies, setLatencies] = useState([]);
-  const [showGroupForm, setShowGroupForm] = useState(false);
-  const [groupDescription, setGroupDescription] = useState('');
   const [testGroups, setTestGroups] = useState([]);
 
   const handleSaveGroup = async (data) => {
@@ -92,57 +95,24 @@ const EvaluationComponent = () => {
     const audioId = Date.now() + Math.random(); // Generate a unique ID
     const checks = voice.checks || {};
     const evaluationTypes = Object.keys(checks).map(key => {
-      switch(key) {
-        case 'begins_with': return 'begins_with';
-        case 'contains': return 'contains';
-        case 'ends_with': return 'ends';
-        case 'contextually_contains': return 'contextually';
-        case 'exact_match': return 'exact_match';
-        case 'word_count': return 'word_count';
-        default: return 'exact_match';
-      }
+      const mappedType = evaluationMapping[key];
+      return mappedType || 'exact_match'; // Default to 'exact_match' if no mapping found
     });
     const phraseValues = Object.values(checks);
-
     updateStateArrays(audioId, null, evaluationTypes, phraseValues, null);
-
     // Store the audio data
     const audioBlob = b64toBlob(voice.audioBase64, 'audio/webm');
     storeAudio(audioId, audioBlob);
   };
 
-
-  
   const handleSelectGroup = (groupId) => {
     console.log('Selected group ID:', groupId);
     // Here you can handle what happens when a group is selected
   };
   
-
   useEffect(() => {
     fetchTests(authFetch, setTests, setError);
   }, []); // make sure this useEffect block runs only once on mount
-  
-  
-  const b64toBlob = (b64Data, contentType = '', sliceSize = 512) => {
-    const byteCharacters = atob(b64Data);
-    const byteArrays = [];
-
-    for (let offset = 0; offset < byteCharacters.length; offset += sliceSize) {
-      const slice = byteCharacters.slice(offset, offset + sliceSize);
-
-      const byteNumbers = new Array(slice.length);
-      for (let i = 0; i < slice.length; i++) {
-        byteNumbers[i] = slice.charCodeAt(i);
-      }
-
-      const byteArray = new Uint8Array(byteNumbers);
-      byteArrays.push(byteArray);
-    }
-
-    const blob = new Blob(byteArrays, { type: contentType });
-    return blob;
-  };
 
   const handleFileSelection = (event) => {
     const file = event.target.files[0];
@@ -170,20 +140,6 @@ const EvaluationComponent = () => {
       setError('Failed to upload the selected test');
       console.error('Error:', error);
     }
-  };
-
-  const evaluationMapping = {
-    "begins": "begins_with",
-    "begins_with": "begins_with",
-    "contains": "contains",
-    "ends": "ends_with",
-    "contextually": "contextually_contains",
-    "exact_match": "exact_match",
-    "word_count": "word_count",
-  };
-
-  const capitalizeFirstLetter = (string) => {
-    return string.charAt(0).toUpperCase() + string.slice(1);
   };
 
   const connectWebSocket = () => {
@@ -222,9 +178,7 @@ const EvaluationComponent = () => {
       
         updateOutputAudioData(id);
         setTranscripts((prevTranscripts) => [...prevTranscripts, event.data]);
-      };
-      
-      
+      }; 
 
       wsRef.current.onclose = () => {
         setConnected(false);
@@ -380,9 +334,7 @@ const EvaluationComponent = () => {
     setDescription(''); // Reset description to empty string
     setSelectedIndex(index);
     setShowSaveModal(true);
-  };
-  
-  
+  }; 
   
   const saveTest = async () => {
     if (description.trim() === '') {
@@ -435,8 +387,6 @@ const EvaluationComponent = () => {
     };
     reader.readAsDataURL(audioBlob);
   };
-  
-  
 
   const handleEvaluate = async (index) => {
     const evaluation = evaluations[index];
@@ -493,7 +443,6 @@ const EvaluationComponent = () => {
 
     deleteAudio(audioId);
     deleteAudio(outputAudioId);
-
     setAudioData((prev) => prev.filter((_, i) => i !== index));
     setOutputAudioData((prev) => prev.filter((_, i) => i !== index));
     setEvaluations((prev) => prev.filter((_, i) => i !== index));
@@ -602,7 +551,6 @@ const EvaluationComponent = () => {
         onVoiceSelect={handleVoiceSelect}
       />
 
-
     <div className="evaluation-component">
     {/* Top left button to create new test group */}
 
@@ -702,7 +650,6 @@ const EvaluationComponent = () => {
                 </button>
               </div>
             </div>
-
           </div>
         )}
       </div>
@@ -818,7 +765,6 @@ const EvaluationComponent = () => {
         <p>You need to sign in to save tests.</p>
         <button className="button primary" onClick={signIn}>Sign In</button>
       </ModalComponent>
-
 
       <ModalComponent
         showModal={showSaveModal}
