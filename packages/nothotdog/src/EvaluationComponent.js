@@ -78,7 +78,10 @@ const EvaluationComponent = () => {
   const handleGroupSelect = (group) => {
     setSelectedGroup(group);
     clearConversationRows();
-    group.voices.forEach(voice => loadVoiceAsConversationRow(voice));
+    // Filter and process only voice inputs
+    group.inputs
+      .filter(input => input.input_type === 'voice')
+      .forEach(voice => loadVoiceAsConversationRow(voice));
   };
 
   const handleEvaluateAll = () => {
@@ -378,13 +381,14 @@ const EvaluationComponent = () => {
   
       const data = {
         description: description,
-        audioBase64: base64Audio,
+        content: base64Audio,
         projectId: projectId, // Static or dynamic project ID
         checks: checks,
+        input_type: "voice",
         sequence: Number(selectedIndex + 1)
       };
   
-      const response = await authFetch('api/voices', {
+      const response = await authFetch('api/inputs', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -419,14 +423,15 @@ const EvaluationComponent = () => {
         checks[evaluationMapping[evalType]] = phrase[idx];
       });
 
-      const response = await authFetch('api/test-voices', {
+      const response = await authFetch('api/test-inputs', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          audioBase64: base64Audio,
+          content: base64Audio,
           checks,
+          inputType: "voice"
         }),
       });
 
@@ -563,7 +568,7 @@ const EvaluationComponent = () => {
         projectId={projectId}
         authFetch={authFetch} 
         userId={userId}
-        onVoiceSelect={handleVoiceSelect}
+        onInputSelect={handleVoiceSelect}
       />
 
     <div className="evaluation-component">
