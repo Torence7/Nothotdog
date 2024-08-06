@@ -65,6 +65,33 @@ const EvaluationComponent = () => {
   const [evaluationStatus, setEvaluationStatus] = useState('');
   const [selectedGroup, setSelectedGroup] = useState(null);
 
+  const [groupOptions, setGroupOptions] = useState([]);
+  const [selectedGroupId, setSelectedGroupId] = useState('');
+  const [audioToSend, setAudioToSend] = useState(null);
+
+  const [checkResults, setCheckResults] = useState([]); // Array of objects
+
+
+  useEffect(() => {
+    const fetchGroups = async () => {
+      try {
+        const response = await authFetch(`api/groups/${projectId}`);
+        const groupsData = await response;
+        const groups = groupsData.data.map(group => ({
+          id: group.uuid,
+          name: group.name
+        }));
+        setGroupOptions(groups);
+      } catch (error) {
+        console.error('Error fetching groups:', error);
+      }
+    };
+  
+    fetchGroups();
+  }, []);
+  
+  
+
   const handleSaveGroup = async (data) => {
     return await authFetch('api/groups', {
       method: 'POST',
@@ -108,7 +135,6 @@ const EvaluationComponent = () => {
     setResults([]);
     setLatencies([]);
   };
-
   const loadVoiceAsConversationRow = (voice) => {
     const audioId = Date.now() + Math.random(); // Generate a unique ID
     const checks = voice.checks || {};
@@ -119,9 +145,10 @@ const EvaluationComponent = () => {
     const phraseValues = Object.values(checks);
     updateStateArrays(audioId, null, evaluationTypes, phraseValues, null);
     // Store the audio data
-    const audioBlob = b64toBlob(voice.audioBase64, 'audio/webm');
+    const audioBlob = b64toBlob(voice.content, 'audio/webm');
     storeAudio(audioId, audioBlob);
-  };
+    setAudioToSend(audioBlob);
+  };  
 
   const handleSelectGroup = (groupId) => {
     console.log('Selected group ID:', groupId);
@@ -159,6 +186,52 @@ const EvaluationComponent = () => {
       console.error('Error:', error);
     }
   };
+
+  const sendAudioToWebSocket = async (audioBlob, index) => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      const startTime = new Date().getTime(); // Capture start time
+      console.log('Request sent at:', startTime);
+  
+      wsRef.current.send(audioBlob);
+  
+      setLatencies((prev) => [...prev, { startTime, latency: null }]);
+      
+      wsRef.current.onmessage = async (event) => {
+        const endTime = new Date().getTime();
+        console.log('WebSocket message received at:', endTime);
+        console.log('WebSocket message:', event.data);
+        const outputAudioBlob = new Blob([event.data], { type: 'audio/webm' });
+        const id = Date.now();
+        await storeAudio(id, outputAudioBlob);
+        
+        setLatencies((prevLatencies) => {
+          const newLatencies = [...prevLatencies];
+          const lastIndex = newLatencies.length - 1;
+          if (lastIndex >= 0 && newLatencies[lastIndex].startTime) {
+            const latency = endTime - newLatencies[lastIndex].startTime;
+            console.log('Start time:', newLatencies[lastIndex].startTime);
+            console.log('End time:', endTime);
+            console.log('Calculated latency:', latency);
+            newLatencies[lastIndex] = { ...newLatencies[lastIndex], latency };
+          }
+          return newLatencies;
+        });
+        
+        updateOutputAudioDataById(id, index);
+        setTranscripts((prevTranscripts) => [...prevTranscripts, event.data]);
+      }; 
+    } else {
+      setError('WebSocket is not connected. Please connect first.');
+    }
+  };  
+
+  const updateOutputAudioDataById = (id, index) => {
+    setOutputAudioData((prevOutputAudioData) => {
+      const newOutputAudioData = [...prevOutputAudioData];
+      newOutputAudioData[index] = id;
+      return newOutputAudioData;
+    });
+  };  
 
   const connectWebSocket = () => {
     if (wsRef.current || !url) return;
@@ -384,8 +457,9 @@ const EvaluationComponent = () => {
         content: base64Audio,
         projectId: projectId, // Static or dynamic project ID
         checks: checks,
-        input_type: "voice",
-        sequence: Number(selectedIndex + 1)
+        inputType: "voice",
+        sequence: Number(selectedIndex + 1),
+        groupId: selectedGroupId  // Include selected groupId
       };
   
       const response = await authFetch('api/inputs', {
@@ -396,7 +470,7 @@ const EvaluationComponent = () => {
         body: JSON.stringify(data),
       });
   
-      if (response.ok) {
+      if (response) {
         console.log('Test saved successfully');
         setDescription(''); // Clear description after saving
         setShowSaveModal(false); // Close modal
@@ -406,7 +480,7 @@ const EvaluationComponent = () => {
     };
     reader.readAsDataURL(audioBlob);
   };
-
+  
   const handleEvaluate = async (index) => {
     const evaluation = evaluations[index];
     const phrase = phrases[index];
@@ -434,20 +508,28 @@ const EvaluationComponent = () => {
           inputType: "voice"
         }),
       });
-
+  
       if (response) {
         const result = await response;
-        const newResults = [...results];
-
-        newResults[index] = result.test_result; // Assuming the API returns a "result" field with "Pass" or "Fail"
-        setResults(newResults);
+        setResults((prevResults) => {
+          const newResults = [...prevResults];
+          newResults[index] = result.test_result;
+          return newResults;
+        });
+  
+        setCheckResults((prevCheckResults) => {
+          const newCheckResults = [...prevCheckResults];
+          newCheckResults[index] = result.checks;
+          return newCheckResults;
+        });
       } else {
         console.error('Failed to evaluate the test');
       }
     };
-
+  
     reader.readAsDataURL(outputAudioBlob);
   };
+  
 
   const handlePhraseChange = useCallback((index, conditionIndex, value) => {
     setPhrases((prevPhrases) => {
@@ -724,24 +806,33 @@ const EvaluationComponent = () => {
                   <span className="audio-label">Output</span>
                 </div>
                 <div className="conditions-section">
-                  {evaluations[rowIndex] && evaluations[rowIndex].map((evaluation, conditionIndex) => (
-                    <div key={conditionIndex} className="condition-row">
-                      <select value={evaluation || 'exact_match'} onChange={(e) => {
-                        const newEvaluations = [...evaluations];
-                        newEvaluations[rowIndex][conditionIndex] = e.target.value;
-                        setEvaluations(newEvaluations);
-                      }}>
-                        <option value="exact_match">Exact Match</option>
-                        <option value="word_count">Word Count</option>
-                        <option value="contains">Contains</option>
-                        <option value="ends">Ends With</option>
-                        <option value="contextually">Contextually Contains</option>
-                        <option value="begins_with">Begins With</option>
-                      </select>
-                      <input type="text" value={phrases[rowIndex][conditionIndex] || ''} onChange={(e) => handlePhraseChange(rowIndex, conditionIndex, e.target.value)} placeholder="Enter phrase" />
-                      <button className="delete-condition-button" onClick={() => handleDeleteCondition(rowIndex, conditionIndex)}>X</button>
-                    </div>
-                  ))}
+                  {evaluations[rowIndex] && evaluations[rowIndex].map((evaluation, conditionIndex) => {
+                    const checkResult = checkResults[rowIndex] && checkResults[rowIndex][evaluationMapping[evaluation]];
+                    const passed = checkResult ? checkResult.passed : null;
+                    const details = checkResult ? checkResult.details : null;
+
+                    return (
+                      <div key={conditionIndex} className="condition-row">
+                        <select value={evaluation || 'exact_match'} onChange={(e) => {
+                          const newEvaluations = [...evaluations];
+                          newEvaluations[rowIndex][conditionIndex] = e.target.value;
+                          setEvaluations(newEvaluations);
+                        }}>
+                          <option value="exact_match">Exact Match</option>
+                          <option value="word_count">Word Count</option>
+                          <option value="contains">Contains</option>
+                          <option value="ends">Ends With</option>
+                          <option value="contextually">Contextually Contains</option>
+                          <option value="begins_with">Begins With</option>
+                        </select>
+                        <input type="text" value={phrases[rowIndex][conditionIndex] || ''} onChange={(e) => handlePhraseChange(rowIndex, conditionIndex, e.target.value)} placeholder="Enter phrase" />
+                        <button className="delete-condition-button" onClick={() => handleDeleteCondition(rowIndex, conditionIndex)}>X</button>
+                        {passed !== null && (
+                          <span className={`dot ${passed ? 'green' : 'red'}`} title={details}></span>
+                        )}
+                      </div>
+                    );
+                  })}
                   <button className="add-condition-button" onClick={() => addCondition(rowIndex)}>Add Condition</button>
                 </div>
                 <div className="evaluate-section">
@@ -765,6 +856,16 @@ const EvaluationComponent = () => {
                     {latencies[rowIndex]?.latency != null ? `Latency: ${latencies[rowIndex].latency} ms` : 'Latency: N/A'}
                   </span>
                 </div>
+                {audioToSend && audioId === audioData[rowIndex] && (
+                  <div className="connect-websocket">
+                    <button
+                      className="button semi-primary"
+                      onClick={() => sendAudioToWebSocket(audioToSend, rowIndex)}
+                    >
+                      Send to WebSocket
+                    </button>
+                  </div>
+                )}
               </div>
             )}
           </Draggable>
@@ -774,30 +875,8 @@ const EvaluationComponent = () => {
     )}
   </StrictModeDroppable>
 </DragDropContext>
+
 </div>
-      <ModalComponent
-        showModal={showModal}
-        onClose={() => setShowModal(false)}
-        headerContent={'Save Test'}
-      >
-        <label htmlFor="description">Description:</label>
-        <input
-          className='file-input'
-          type="text"
-          id="description"
-          value={description}
-          onChange={(e) => setDescription(e.target.value)}
-          placeholder="Enter description"
-        />
-        <div className="button-group">
-          <button className="button primary" onClick={saveTest}>
-            Save
-          </button>
-          <button className="button" onClick={() => setShowModal(false)}>
-            Cancel
-          </button>
-        </div>
-      </ModalComponent>
       <ModalComponent
         showModal={showSignInModal}
         onClose={() => setShowSignInModal(false)}
@@ -820,6 +899,20 @@ const EvaluationComponent = () => {
           onChange={(e) => setDescription(e.target.value)}
           placeholder="Enter description"
         />
+        
+        <label htmlFor="group">Select Group:</label>
+          <select
+            id="group"
+            value={selectedGroupId}
+            onChange={(e) => setSelectedGroupId(e.target.value)}
+          >
+            <option value="">Select a group</option>
+            {groupOptions.map((group) => (
+              <option key={group.id} value={group.id}>
+                {group.name}
+              </option>
+            ))}
+          </select>
         <div className="button-group">
           <button className="button primary" onClick={saveTest}>
             Save
