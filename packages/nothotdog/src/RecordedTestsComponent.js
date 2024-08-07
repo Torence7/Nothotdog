@@ -14,7 +14,7 @@ const RecordedTests = () => {
         const data = await response;
         setProjects(data.data);
       } catch (err) {
-        setError('Failed to fetch recorded tests');
+        setError('Please login to view recorded tests');
         console.error('Fetch error:', err);
       }
     };
@@ -56,7 +56,7 @@ const RecordedTests = () => {
   return (
     <div className="recorded-tests">
       <h2>Recorded Tests</h2>
-      {error && <div className="error">{error}</div>}
+      {error && <div className="error-message">{error}</div>}
       <table className="tests-table">
         <thead>
           <tr>
