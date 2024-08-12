@@ -9,7 +9,9 @@ import { DragDropContext, Draggable, Droppable } from 'react-beautiful-dnd';
 import AudioPlayer from './AudioPlayer';
 import fetchTests from './fetchTests'; // Import fetchTests
 import TestGroupSidebar from './TestGroupSideBar';
-import { SignInModal } from './UtilityModals'; // Ensure SignInModal is correctly imported
+import { SignInModal } from './UtilityModals';
+import { useLocation } from 'react-router-dom';
+
 
 import { 
   b64toBlob, 
@@ -56,7 +58,7 @@ const EvaluationComponent = () => {
   const [results, setResults] = useState([]);
   const [selectedFile, setSelectedFile] = useState(null);
   const { authFetch } = useAuthFetch(); // Use the custom hook
-
+  const location = useLocation();
 
   const [tests, setTests] = useState([]);
   const [selectedTest, setSelectedTest] = useState(null);
@@ -119,6 +121,13 @@ const EvaluationComponent = () => {
       .forEach(voice => loadVoiceAsConversationRow(voice));
   };
 
+  useEffect(() => {
+    if (location.state && location.state.selectedGroup) {
+      handleGroupSelect(location.state.selectedGroup);
+    }
+    // Only run this effect once when the component mounts
+  }, []);
+
   const evaluateAllTests = async () => {
     if (!selectedGroup) {
       alert("Please select a group first");
@@ -162,8 +171,8 @@ const EvaluationComponent = () => {
     const checks = voice.checks || {};
     
     // Only map the values of checks to phrases
-    const phraseValues = Object.values(checks).map(value => 
-      typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value)
+    const phraseValues = checks.map(check => 
+      typeof check.value === 'object' && check.value !== null ? JSON.stringify(check.value) : String(check.value)
     );
   
     // Only the evaluation types are needed for evaluations
@@ -700,11 +709,13 @@ const EvaluationComponent = () => {
         testGroups={testGroups} 
         onSelectGroup={handleGroupSelect} 
         onGroupSelect={handleGroupSelect} 
+        onTextGroupSelect={handleGroupSelect}
         onSaveGroup={handleSaveGroup}
         projectId={projectId}
         authFetch={authFetch} 
         userId={userId}
         onInputSelect={handleVoiceSelect}
+        componentType={'voice'}
       />
 
     <div className="evaluation-component">

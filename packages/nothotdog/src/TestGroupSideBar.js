@@ -3,8 +3,10 @@ import './css/TestGroupSideBar.css';
 import { SignInModal } from './UtilityModals'; // Ensure SignInModal is correctly imported
 import useAuthFetch from './AuthFetch';
 import { useAuth } from './AuthContext';
+import { useNavigate } from 'react-router-dom'; // Import useNavigate
 
-const TestGroupSidebar = ({ projectId, onGroupSelect, onInputSelect, onTextGroupSelect }) => {
+
+const TestGroupSidebar = ({ projectId, onGroupSelect, onInputSelect, onTextGroupSelect, componentType }) => {
   const { signIn, userId } = useAuth(); // Access signIn and userId function
   const { authFetch, showSignInModal, setShowSignInModal } = useAuthFetch(); // Destructure showSignInModal and setShowSignInModal
   const [voiceData, setVoiceData] = useState([]);
@@ -13,6 +15,8 @@ const TestGroupSidebar = ({ projectId, onGroupSelect, onInputSelect, onTextGroup
   const [newGroupDescription, setNewGroupDescription] = useState('');
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
+  const navigate = useNavigate(); // Initialize useNavigate hook
+
 
   useEffect(() => {
     if (userId) {
@@ -48,15 +52,36 @@ const TestGroupSidebar = ({ projectId, onGroupSelect, onInputSelect, onTextGroup
     }));
   };
   const handleTextGroupClick = (group) => {
+    const groupType = group.inputs.length > 0 ? group.inputs[0].input_type : 'unknown';
+
+    // Disable clicking for text groups in EvaluationComponent and for voice groups in RestEvaluationComponent
+    if ((componentType === 'voice' && groupType === 'text')) {
+      navigate('/text-evaluation', { state: { selectedGroup: group } });
+
+      return; // Do nothing if the group type should be disabled
+    }
     if (group.inputs && group.inputs.length > 0) {
         onTextGroupSelect(group.inputs);
     }
 };
 
-  const handleGroupClick = (group) => {
-    toggleGroup(group.uuid);
+const handleGroupClick = (group) => {
+  const groupType = group.inputs.length > 0 ? group.inputs[0].input_type : 'unknown';
+
+  if (componentType === 'text' && groupType === 'voice') {
+    // Navigate to RestEvaluationComponent and pass the group as state
+    navigate('/voice-evaluation', { state: { selectedGroup: group } });
+    return;
+  }
+
+  if (groupType === 'text') {
+    handleTextGroupClick(group);
+  } else {
     onGroupSelect(group);
-  };
+  }
+
+  toggleGroup(group.uuid);
+};
 
   const handleInputClick = (input) => {
     onInputSelect(input);
