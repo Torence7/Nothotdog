@@ -11,10 +11,12 @@
     width: 100%;
     box-sizing: border-box;
   } */
+  .parent-conversation-row .conversation-row {
+    grid-template-columns: 2fr 1fr 1.5fr 1fr 1fr auto;
+  }
   
   .drag-handle {
     cursor: move;
-    position: absolute;
     left: 10px;
     top: 10px;
     color: #6c757d;
@@ -185,4 +187,20 @@
     .latency-label {
       margin-bottom: 5px;
     }
+  }
+
+  .output-field-section {
+    display: flex;
+    width: 302px;
+    vertical-align: revert-layer;
+    gap: 10px;
+}
+  .output-key-input {
+    display: inline-block;
+    width: 30%;
+  }
+  .output-value-input {
+    display: inline-block;
+    width: 52%;
+    border: 1px solid #ccc;
   }
