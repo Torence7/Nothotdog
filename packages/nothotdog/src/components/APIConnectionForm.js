@@ -131,13 +131,13 @@ const APIRequestForm = ({ onApiResponse, setOutputValue, onFullApiResponse, init
     }
   };
 
-  const handleSetOutputValue = (value, key) => {
+  const handleSetOutputValue = (key, value) => {
     setSelectedNodePath(key);
-    const cleanedValue = cleanValue(value);
-    if (typeof cleanedValue === 'object') {
-      setOutputValue(key, JSON.stringify(cleanedValue));
+    const cleanedKey = cleanValue(key);
+    if (typeof cleanedKey === 'object') {
+      setOutputValue(key, JSON.stringify(cleanedKey));
     } else {
-      setOutputValue(key, cleanedValue);
+      setOutputValue(cleanedKey, value);
     }
   };
 

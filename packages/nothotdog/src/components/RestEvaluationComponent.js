@@ -46,8 +46,6 @@ const RestEvaluationComponent = () => {
     setSelectedGroupId(group.id);
     clearConversationRows();
     group.inputs.filter(input => input.input_type === 'text').forEach(text => loadTextAsConversationRow(text));
-    setIsUpdate(true);
-    // setIsUpdate(group.inputs.length > 0);
   };
 
   useEffect(() => {
@@ -68,7 +66,7 @@ const RestEvaluationComponent = () => {
       let content = row.apiResponse ? row.apiResponse.body : {};
   
       const checks = row.conversation.evaluations.map((evaluation, idx) => ({
-        field: row.conversation.outputValues[idx] || '',
+        field: row.conversation.outputKeys[idx] || '',
         rule: evaluation,
         value: row.conversation.phrases[idx]
       }));
@@ -136,7 +134,7 @@ const RestEvaluationComponent = () => {
       projectId,
       groupId: selectedGroupId || null, // From the modal dropdown
       checks: row.conversation.evaluations.map((evaluation, idx) => ({
-        field: row.conversation.outputValues[idx] || '',
+        field: row.conversation.outputKeys[idx] || '',
         rule: evaluation,
         value: row.conversation.phrases[idx]
       })),
@@ -157,12 +155,12 @@ const RestEvaluationComponent = () => {
       });
 
       if (response) {
-        console.log('Test saved successfully');
         setDescription('');
         setShowSaveModal(false);
         setCurrentSavingIndex(null);
+        alert('Test saved successfully');
       } else {
-        console.error('Failed to save the test');
+        alert('Failed to save the test', error);
       }
     } catch (error) {
       console.error('Error saving test:', error);
@@ -179,7 +177,6 @@ const RestEvaluationComponent = () => {
     setDescription(row.description || ''); // Set the description from the existing test
     setSelectedGroupId(row.groupId || null); // Set the group ID from the existing test
     setShowSaveModal(true);
-    setIsUpdate(true); // Indicate this is an update
   };
 
   const handleUpdateConfirm = async () => {
@@ -194,7 +191,7 @@ const RestEvaluationComponent = () => {
         projectId,
         groupId: selectedGroupId || null, // Use a fallback if selectedGroupId is undefined
         checks: (row.conversation.evaluations || []).map((evaluation, idx) => ({
-            field: row.conversation.outputValues?.[idx] || '',  // Use optional chaining to prevent undefined errors
+            field: row.conversation.outputKeys?.[idx] || '',  // Use optional chaining to prevent undefined errors
             rule: evaluation || 'exact_match',  // Default to 'exact_match' if evaluation is undefined
             value: row.conversation.phrases?.[idx] || '',  // Use optional chaining to prevent undefined errors
         })),
@@ -215,12 +212,12 @@ const RestEvaluationComponent = () => {
         });
 
         if (response) {
-            console.log('Test updated successfully');
             setDescription('');
             setShowSaveModal(false);
             setCurrentSavingIndex(null);
+            alert('Test updated successfully');
         } else {
-            console.error('Failed to update the test');
+            alert('Failed to update the test', error);
         }
     } catch (error) {
         console.error('Error updating test:', error);
@@ -233,7 +230,6 @@ const RestEvaluationComponent = () => {
   };
   
   const loadTextAsConversationRow = (text) => {
-    setIsUpdate(true); // Set isUpdate to true when loading a test
     const checks = text.checks || {};
     const conditions = Object.entries(checks).map(([key, value]) => ({
       evaluationType: evaluationMapping[key] || 'exact_match',
@@ -252,8 +248,8 @@ const RestEvaluationComponent = () => {
       description: text.description || '',
       groupId: text.groupId || null,
       conditions,
-      outputValue: text.content || '',
-      outputKey: '',
+      outputValue:'',
+      outputKey: text.content || '',
       result: null,
       latency: { startTime: null, latency: null },
     }]);
@@ -271,38 +267,63 @@ const RestEvaluationComponent = () => {
     setRows(prev => prev.filter((_, i) => i !== index));
   };
 
-  const handleDeleteCondition = useCallback((rowIndex, conditionIndex) => {
-    setRows(prevRows => {
-      const newRows = [...prevRows];
-      const row = {...newRows[rowIndex]};
-      if (row.conversation && Array.isArray(row.conversation.evaluations) && Array.isArray(row.conversation.phrases)) {
-        row.conversation.evaluations = row.conversation.evaluations.filter((_, index) => index !== conditionIndex);
-        row.conversation.phrases = row.conversation.phrases.filter((_, index) => index !== conditionIndex);
+  const handleDeleteCondition = (rowIndex, conditionIndex) => {
+    setRows(prev => {
+      const newRows = [...prev];
+      const conversation = newRows[rowIndex].conversation;
+  
+      if (conversation && conversation.outputKeys && conversation.outputValues && conversation.evaluations) {
+        // Remove the condition at the specific index
+        conversation.outputKeys.splice(conditionIndex, 1);
+        conversation.outputValues.splice(conditionIndex, 1);
+        conversation.evaluations.splice(conditionIndex, 1);
+        
+        // Remove the phrase associated with the condition, if it exists
+        if (conversation.phrases) {
+          conversation.phrases.splice(conditionIndex, 1);
+        }
+  
+        // Update the conversation in the row
+        newRows[rowIndex].conversation = conversation;
       }
-      newRows[rowIndex] = row;
+  
       return newRows;
     });
-  }, []);
+  };
+  
 
   const handleSetOutputValue = useCallback((rowIndex, key, value) => {
     setRows(prevRows => {
       const newRows = [...prevRows];
+      
+      // Ensure the conversation object and relevant arrays are initialized
       if (!newRows[rowIndex].conversation) {
         newRows[rowIndex].conversation = {};
       }
-      if (!newRows[rowIndex].conversation.outputKeys) {
+      if (!Array.isArray(newRows[rowIndex].conversation.outputKeys)) {
         newRows[rowIndex].conversation.outputKeys = [];
       }
-      if (!newRows[rowIndex].conversation.outputValues) {
+      if (!Array.isArray(newRows[rowIndex].conversation.outputValues)) {
         newRows[rowIndex].conversation.outputValues = [];
       }
-      const index = newRows[rowIndex].conversation.outputKeys.length;
-      newRows[rowIndex].conversation.outputKeys[index] = key;
-      newRows[rowIndex].conversation.outputValues[index] = value;
+      if (!Array.isArray(newRows[rowIndex].conversation.evaluations)) {
+        newRows[rowIndex].conversation.evaluations = [];
+      }
+      if (!Array.isArray(newRows[rowIndex].conversation.phrases)) {
+        newRows[rowIndex].conversation.phrases = [];
+      }
+  
+      // Always create a new entry
+      const newIndex = newRows[rowIndex].conversation.outputKeys.length;
+      newRows[rowIndex].conversation.outputKeys[newIndex] = key;
+      newRows[rowIndex].conversation.outputValues[newIndex] = value;
+      newRows[rowIndex].conversation.evaluations[newIndex] = 'exact_match'; // Or the default evaluation type
+      newRows[rowIndex].conversation.phrases[newIndex] = ''; // Or the default phrase value
+      
       return newRows;
     });
   }, []);
-
+  
   const onDragEnd = (result) => {
     if (!result.destination) {
       return;
@@ -325,7 +346,6 @@ const RestEvaluationComponent = () => {
 
   const addConversationRow = useCallback(() => {
 
-    console.log('Adding new row');
     setRows(prev => [
       ...prev,
       {
@@ -390,12 +410,16 @@ const RestEvaluationComponent = () => {
       const newRow = createConversationRowFromInput(input);
       setRows(prevRows => [...prevRows, ...newRow]);
     });
-    setIsUpdate(true); // Set isUpdate to true when loading a group
 };
 
 
 const createConversationRowFromInput = (input) => {
-  setIsUpdate(true); // Set isUpdate to true when creating a new row
+
+  if (input.uuid) {
+    setIsUpdate(true); // Set isUpdate to true when creating a new row
+  } else {
+    setIsUpdate(false); // Set isUpdate to false when creating a new row
+  }
   const apiDetails = {
       method: input.method || 'GET',
       url: input.url || '',
@@ -411,6 +435,7 @@ const createConversationRowFromInput = (input) => {
           evaluations: [],
           phrases: [],
           outputValues: [],
+          outputKeys: [],
           result: null,
           latency: { startTime: null, latency: null },
       },
@@ -422,7 +447,7 @@ const createConversationRowFromInput = (input) => {
   input.checks.forEach(check => {
       newRow.conversation.evaluations.push(check.rule);
       newRow.conversation.phrases.push(check.value);
-      newRow.conversation.outputValues.push(check.field);
+      newRow.conversation.outputKeys.push(check.field);
   });
 
   return [newRow];

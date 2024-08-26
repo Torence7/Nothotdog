@@ -204,13 +204,6 @@ const EvaluationComponent = () => {
     setIsEditCase(true); // Set edit mode
   };
   
-  
-
-  const handleSelectGroup = (groupId) => {
-    console.log('Selected group ID:', groupId);
-    // Here you can handle what happens when a group is selected
-  };
-  
   useEffect(() => {
     fetchTests(authFetch, setTests, setError);
   }, []); // make sure this useEffect block runs only once on mount
@@ -247,14 +240,11 @@ const EvaluationComponent = () => {
     return new Promise((resolve, reject) => {
       if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
         const startTime = new Date().getTime(); // Capture start time
-        console.log('Request sent at:', startTime);
   
         wsRef.current.send(audioBlob);
   
         wsRef.current.onmessage = async (event) => {
           const endTime = new Date().getTime();
-          console.log('WebSocket message received at:', endTime);
-          console.log('WebSocket message:', event.data);
           const outputAudioBlob = new Blob([event.data], { type: 'audio/webm' });
           const id = Date.now();
           await storeAudio(id, outputAudioBlob);
@@ -264,9 +254,6 @@ const EvaluationComponent = () => {
             const lastIndex = newLatencies.length - 1;
             if (lastIndex >= 0 && newLatencies[lastIndex].startTime) {
               const latency = endTime - newLatencies[lastIndex].startTime;
-              console.log('Start time:', newLatencies[lastIndex].startTime);
-              console.log('End time:', endTime);
-              console.log('Calculated latency:', latency);
               newLatencies[lastIndex] = { ...newLatencies[lastIndex], latency };
             }
             return newLatencies;
@@ -308,13 +295,10 @@ const EvaluationComponent = () => {
 
       wsRef.current.onopen = () => {
         setConnected(true);
-        console.log('WebSocket connected');
       };
 
       wsRef.current.onmessage = async (event) => {
         const endTime = new Date().getTime();
-        console.log('WebSocket message received at:', endTime);
-        console.log('WebSocket message:', event.data);
         const outputAudioBlob = new Blob([event.data], { type: 'audio/webm' });
         const id = Date.now();
         await storeAudio(id, outputAudioBlob);
@@ -324,9 +308,6 @@ const EvaluationComponent = () => {
           const lastIndex = newLatencies.length - 1;
           if (lastIndex >= 0 && newLatencies[lastIndex].startTime) {
             const latency = endTime - newLatencies[lastIndex].startTime;
-            console.log('Start time:', newLatencies[lastIndex].startTime);
-            console.log('End time:', endTime);
-            console.log('Calculated latency:', latency);
             newLatencies[lastIndex] = { ...newLatencies[lastIndex], latency };
           }
           return newLatencies;
@@ -339,7 +320,6 @@ const EvaluationComponent = () => {
       wsRef.current.onclose = () => {
         setConnected(false);
         setMode('');
-        console.log('WebSocket disconnected');
       };
 
       wsRef.current.onerror = (error) => {
@@ -423,7 +403,6 @@ const EvaluationComponent = () => {
     if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
       mediaRecorderRef.current.stop();
       const startTime = new Date().getTime(); // Capture start time
-      console.log('Request sent at:', startTime);
       audioBufferRef.current.push(startTime); // Store start time in buffer
       setLatencies((prev) => [...prev, { startTime, latency: null }]);
     }
@@ -442,7 +421,6 @@ const EvaluationComponent = () => {
         wsRef.current.send(reader.result);
   
         const startTime = new Date().getTime(); // Capture start time
-        console.log('Request sent at:', startTime);
         const id = Date.now();
         await storeAudio(id, audioBlob);
         updateStateArrays(id, startTime, [], [], null);
@@ -541,11 +519,11 @@ const EvaluationComponent = () => {
       });
   
       if (response) {
-        console.log('Test saved successfully');
         setDescription(''); // Clear description after saving
         setShowSaveModal(false); // Close modal
+        alert('Test saved successfully');
       } else {
-        console.error('Failed to save the test');
+        alert('Failed to save the test');
       }
     };
     reader.readAsDataURL(audioBlob);
@@ -602,7 +580,6 @@ const EvaluationComponent = () => {
       });
 
       if (response) {
-        console.log('Test updated successfully');
         setDescription(''); 
         setShowSaveModal(false); 
         setIsEditCase(false);
