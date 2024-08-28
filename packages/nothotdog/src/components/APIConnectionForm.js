@@ -1,65 +1,86 @@
 import React, { useState, useEffect } from 'react';
 import { Send, Loader, Plus, X } from 'lucide-react';
 import './../styles/ApiConnections.css';
+import axios from 'axios';
 
-const APIRequestForm = ({ onApiResponse, setOutputValue, onFullApiResponse, initialValues }) => {
+const APIRequestForm = ({ onApiResponse, setOutputValue, onFullApiResponse, initialValues, handleApiChange, evaluations,setEvaluations }) => {
   const [method, setMethod] = useState(initialValues?.method || 'GET');
   const [url, setUrl] = useState(initialValues?.url || '');
-  const [params, setParams] = useState(
-    Array.isArray(initialValues?.queryParams) ? initialValues.queryParams.map(param => ({ key: param.key, value: param.value })) : [{ key: '', value: '' }]
-  );
-  const [headers, setHeaders] = useState(
-    Array.isArray(initialValues?.headers) ? initialValues.headers.map(header => ({ key: header.key, value: header.value })) : [{ key: '', value: '' }]
-  );
-  const [body, setBody] = useState(initialValues?.body || '');
+
+  const [selectedNodePath, setSelectedNodePath] = useState('');
+  
+  const [params, setParams] = useState(() => {
+    const initialParams = initialValues?.queryParams || [];
+    return Array.isArray(initialParams) && initialParams.length > 0 
+      ? initialParams 
+      : [{ key: '', value: '' }];
+  });
+  const [headers, setHeaders] = useState(() => {
+    const initialHeaders = initialValues?.headers || [];
+    return Array.isArray(initialHeaders) && initialHeaders.length > 0 
+      ? initialHeaders 
+      : [{ key: '', value: '' }];
+  });
+  const [body, setBody] = useState(() => {
+    try {
+      return JSON.stringify(JSON.parse(initialValues?.body || '{}'), null, 2);
+    } catch (e) {
+      console.error('Invalid initial JSON body:', e);
+      return '{}';
+    }
+  });
   const [response, setResponse] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
-  const [selectedNodePath, setSelectedNodePath] = useState('');
   const [activeTab, setActiveTab] = useState('params');
 
-  const cleanValue = (value) => {
-    let cleanedValue = value.replace(/^["'](.+(?=["']$))["']$/, '$1');
-    cleanedValue = cleanedValue.replace(/,$/, '');
-    return cleanedValue;
-  };
+  useEffect(() => {
+    handleApiChange('method', method);
+  }, [method, handleApiChange]);
 
   useEffect(() => {
-    if (method === 'POST' || method === 'PUT') {
-      setHeaders((prevHeaders) => {
-        const contentTypeHeader = prevHeaders.find((h) => h.key.toLowerCase() === 'content-type');
-        if (contentTypeHeader) {
-          return prevHeaders.map((h) =>
-            h.key.toLowerCase() === 'content-type' ? { ...h, value: 'application/json' } : h
-          );
-        } else {
-          return [...prevHeaders, { key: 'Content-Type', value: 'application/json' }];
-        }
-      });
-    }
-  }, [method]);
+    handleApiChange('url', url);
+  }, [url, handleApiChange]);
+
+  useEffect(() => {
+    handleApiChange('queryParams', params);
+  }, [params, handleApiChange]);
+
+  useEffect(() => {
+    handleApiChange('headers', headers);
+  }, [headers, handleApiChange]);
+
+  useEffect(() => {
+    handleApiChange('body', body);
+  }, [body, handleApiChange]);
+
 
   const addParam = () => setParams([...params, { key: '', value: '' }]);
   const addHeader = () => setHeaders([...headers, { key: '', value: '' }]);
 
   const removeParam = (index) => {
     const newParams = params.filter((_, i) => i !== index);
-    setParams(newParams);
+    setParams(newParams.length > 0 ? newParams : [{ key: '', value: '' }]);
   };
 
   const removeHeader = (index) => {
     const newHeaders = headers.filter((_, i) => i !== index);
-    setHeaders(newHeaders);
+    setHeaders(newHeaders.length > 0 ? newHeaders : [{ key: '', value: '' }]);
+  };
+
+  const handleBodyChange = (e) => {
+    setBody(e.target.value);
+    handleApiChange('body', e.target.value);
   };
 
   const updateParam = (index, field, value) => {
     const newParams = [...params];
-    newParams[index][field] = value;
+    newParams[index] = { ...newParams[index], [field]: value };
     setParams(newParams);
   };
 
   const updateHeader = (index, field, value) => {
     const newHeaders = [...headers];
-    newHeaders[index][field] = value;
+    newHeaders[index] = { ...newHeaders[index], [field]: value };
     setHeaders(newHeaders);
   };
 
@@ -75,49 +96,60 @@ const APIRequestForm = ({ onApiResponse, setOutputValue, onFullApiResponse, init
         }
       });
 
-      const requestHeaders = new Headers();
-      headers.forEach((header) => {
-        if (header.key && header.value) {
-          requestHeaders.append(header.key, header.value);
-        }
-      });
-
-      const requestOptions = {
+      const requestConfig = {
         method: method,
-        headers: requestHeaders,
+        url: urlWithParams.toString(),
+        headers: {
+          'Content-Type': 'application/json',
+          ...headers.reduce((acc, header) => {
+            if (header.key && header.value) {
+              acc[header.key] = header.value;
+            }
+            return acc;
+          }, {})
+        },
       };
 
       if (method === 'POST' || method === 'PUT') {
-        requestOptions.body = body;
+        try {
+          requestConfig.data = JSON.parse(body);
+        } catch (e) {
+          console.error('Invalid JSON in request body:', e);
+          setResponse({ error: 'Invalid JSON in request body' });
+          setIsLoading(false);
+          return;
+        }
       }
 
-      const response = await fetch(urlWithParams.toString(), requestOptions);
-
-      const contentType = response.headers.get('content-type');
-      let responseData;
-      if (contentType && contentType.indexOf('application/json') !== -1) {
-        responseData = await response.json();
-      } else {
-        responseData = await response.text();
-      }
+      const axiosResponse = await axios(requestConfig);
 
       const fullResponse = {
-        status: response.status,
-        statusText: response.statusText,
-        headers: Object.fromEntries(response.headers.entries()),
-        body: responseData,
+        status: axiosResponse.status,
+        statusText: axiosResponse.statusText,
+        headers: axiosResponse.headers,
+        body: axiosResponse.data,
       };
 
       setResponse(fullResponse);
-      
-      // Call onApiResponse with the full API details
+
       if (onApiResponse) {
         onApiResponse({
           method,
           url: urlWithParams.toString(),
-          headers: Object.fromEntries(requestHeaders.entries()),
+          headers: requestConfig.headers,
           queryParams: Object.fromEntries(urlWithParams.searchParams.entries()),
-          body: requestOptions.body,
+          body: requestConfig.data,
+          response: fullResponse
+        });
+      }
+
+      if (onFullApiResponse) {
+        onFullApiResponse({
+          method,
+          url: urlWithParams.toString(),
+          headers: requestConfig.headers,
+          queryParams: Object.fromEntries(urlWithParams.searchParams.entries()),
+          body: requestConfig.data,
           response: fullResponse
         });
       }
@@ -131,15 +163,38 @@ const APIRequestForm = ({ onApiResponse, setOutputValue, onFullApiResponse, init
     }
   };
 
+  const cleanValue = (value) => {
+    if (typeof value === 'string') {
+      let cleanedValue = value.replace(/^["'](.+(?=["']$))["']$/, '$1');
+      cleanedValue = cleanedValue.replace(/,$/, '');
+      return cleanedValue;
+    }
+    return value;
+  };
+
   const handleSetOutputValue = (key, value) => {
-    setSelectedNodePath(key);
-    const cleanedKey = cleanValue(key);
-    if (typeof cleanedKey === 'object') {
-      setOutputValue(key, JSON.stringify(cleanedKey));
+    setOutputValue(key, value);
+    
+    const existingEvalIndex = evaluations.findIndex(evaluations => evaluations.key === key);
+    if (existingEvalIndex !== -1) {
+      const updatedEvaluations = [...evaluations];
+      updatedEvaluations[existingEvalIndex].value = value;
+      setEvaluations(updatedEvaluations);
     } else {
-      setOutputValue(cleanedKey, value);
+      setEvaluations([...evaluations, { key, rule: 'Exact Match', value }]);
     }
   };
+
+  const updateEvaluation = (index, field, value) => {
+    const updatedEvaluations = [...evaluations];
+    updatedEvaluations[index] = { ...updatedEvaluations[index], [field]: value };
+    setEvaluations(updatedEvaluations);
+  };
+
+  const removeEvaluation = (index) => {
+    setEvaluations(evaluations.filter((_, i) => i !== index));
+  };
+
 
   const generateNestedKeyPaths = (obj, prefix = '') => {
     let result = [];
@@ -254,51 +309,87 @@ const APIRequestForm = ({ onApiResponse, setOutputValue, onFullApiResponse, init
           </div>
         )}
 
-{activeTab === 'response' && (
-        <div className="section response-section">
-          <h3>Response</h3>
-          {response ? (
-            response.error ? (
-              <p className="error">Error: {response.error}</p>
-            ) : (
-              <>
-                <p className="status">Status: {response.status} {response.statusText}</p>
-                <div className="response-details">
-                  <h4>Headers:</h4>
-                  <pre>{JSON.stringify(response.headers, null, 2)}</pre>
-                  <h4>Body:</h4>
-                  <pre>
-                    {typeof response.body === 'object' ? (
-                      generateNestedKeyPaths(response.body).map(({ key, value }, index) => (
-                        <div
-                          key={index}
-                          className="response-line"
-                          onMouseEnter={() => (document.getElementById(`set-output-btn-${index}`).style.display = 'inline')}
-                          onMouseLeave={() => (document.getElementById(`set-output-btn-${index}`).style.display = 'none')}
-                        >
-                          {key}: {JSON.stringify(value)}
-                          <button
-                            id={`set-output-btn-${index}`}
-                            className="set-output-btn"
-                            style={{ display: 'none', marginLeft: '2px' }}
-                            onClick={() => handleSetOutputValue(key, value)}
+        {activeTab === 'response' && (
+          <div className="section response-section">
+            <h3>Response</h3>
+            {response ? (
+              response.error ? (
+                <p className="error">Error: {response.error}</p>
+              ) : (
+                <>
+                  <p className="status">Status: {response.status} {response.statusText}</p>
+                  <div className="response-details">
+                    <h4>Headers:</h4>
+                    <pre>{JSON.stringify(response.headers, null, 2)}</pre>
+                    <h4>Body:</h4>
+                    <pre>
+                      {typeof response.body === 'object' ? (
+                        generateNestedKeyPaths(response.body).map(({ key, value }, index) => (
+                          <div
+                            key={index}
+                            className="response-line"
+                            onMouseEnter={() => (document.getElementById(`set-output-btn-${index}`).style.display = 'inline')}
+                            onMouseLeave={() => (document.getElementById(`set-output-btn-${index}`).style.display = 'none')}
                           >
-                            Set as Output
-                          </button>
-                        </div>
-                      ))
-                    ) : (
-                      response.body
-                    )}
-                  </pre>
-                </div>
-              </>
-            )
-          ) : (
-            <p>No response yet</p>
-          )}
+                            {key}: {JSON.stringify(value)}
+                            <button
+                              id={`set-output-btn-${index}`}
+                              className="set-output-btn"
+                              style={{ display: 'none', marginLeft: '2px' }}
+                              onClick={() => handleSetOutputValue(key, value)}
+                            >
+                              Set as Output
+                            </button>
+                          </div>
+                        ))
+                      ) : (
+                        response.body
+                      )}
+                    </pre>
+                  </div>
+                </>
+              )
+            ) : (
+              <p>No response yet</p>
+            )}
+          </div>
+       )}
+
+      <div className="evaluations-section">
+          <h3>Evaluations</h3>
+            {evaluations.map((evaluation, index) => (
+          <div key={index} className="evaluation-row">
+            <input
+              type="text"
+              value={evaluation.key}
+              onChange={(e) => updateEvaluation(index, 'key', e.target.value)}
+              placeholder="Key"
+            />
+            <select
+                value={evaluation.rule}
+              onChange={(e) => updateEvaluation(index, 'rule', e.target.value)}
+            >
+              <option value="Exact Match">Exact Match</option>
+              <option value="Contains">Contains</option>
+              <option value="Begins With">Begins With</option>
+              <option value="Ends With">Ends With</option>
+              <option value="Word Count">Word Count</option>
+              <option value="Contextually Contains">Contextually Contains</option>
+              <option value="Less Than">Less Than</option>
+            </select>
+            <input
+                type="text"
+                value={evaluation.value}
+                onChange={(e) => updateEvaluation(index, 'value', e.target.value)}
+                placeholder="Expected Value"
+            />
+                  <button onClick={() => removeEvaluation(index)}>Remove</button>
+              </div>
+          ))}
+          <button onClick={() => setEvaluations([...evaluations, { key: '', rule: 'Exact Match', value: '' }])}>
+            Add Evaluation
+          </button>
         </div>
-      )}
       </div>
     </div>
   );

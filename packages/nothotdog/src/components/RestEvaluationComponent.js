@@ -1,19 +1,19 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import '../components/EvaluationComponent';
 import '../styles/Modal.css';
+import '../styles/ApiTabs.css';
 import { useAuth } from '../contexts/AuthContext';
 import useAuthFetch from '../hooks/AuthFetch';
-import { DragDropContext, Draggable, Droppable } from 'react-beautiful-dnd';
 import TestGroupSidebar from '../components/TestGroupSideBar';
 import { SaveTestModal, SignInModal } from './UtilityModals';
-import ConversationRow from './ConversationRow';
-import { evaluationMapping } from '../utils/utils';  // Add this import at the top of the file
-import StrictModeDroppable from './StrictModeDroppable';
 import { useLocation } from 'react-router-dom';
+import ApiTabs from './ApiTabs';
+
+
 const RestEvaluationComponent = () => {
   const { user, signIn, projectId, userId } = useAuth();
   const { authFetch } = useAuthFetch();
-  const [rows, setRows] = useState([]);
+  const [activeTabIndex, setActiveTabIndex] = useState(0);
   const [showSaveModal, setShowSaveModal] = useState(false);
   const [showSignInModal, setShowSignInModal] = useState(false);
   const [description, setDescription] = useState('');
@@ -21,7 +21,7 @@ const RestEvaluationComponent = () => {
   const [selectedGroupId, setSelectedGroupId] = useState('');
   const [currentSavingIndex, setCurrentSavingIndex] = useState(null);
   const location = useLocation();
-  const [isUpdate, setIsUpdate] = useState(false); // New state to track if we're updating
+  const [isUpdate, setIsUpdate] = useState(false);
 
 
   useEffect(() => {
@@ -38,69 +38,84 @@ const RestEvaluationComponent = () => {
         console.error('Error fetching groups:', error);
       }
     };
-  
+
     fetchGroups();
   }, []);
 
-  const handleGroupSelect = (group) => {
+
+  const [tabs, setTabs] = useState([{
+    name: 'API 1',
+    api: {
+      method: 'GET',
+      url: '',
+      headers: [{ key: '', value: '' }],
+      queryParams: [{ key: '', value: '' }],
+      body: '',
+    },
+    conversation: {
+      evaluations: [],
+      outputKeys: [],
+      outputValues: [],
+      result: null,
+      latency: { startTime: null, latency: null },
+    },
+    apiResponse: null,
+  }]);
+
+
+  const handleGroupSelect = useCallback((group) => {
     setSelectedGroupId(group.id);
-    clearConversationRows();
-    group.inputs.filter(input => input.input_type === 'text').forEach(text => loadTextAsConversationRow(text));
-  };
+    const textInputs = group.inputs.filter(input => input.input_type === 'text');
+    const newTabs = textInputs.map((input, index) => createTabFromInput(input, index));
+    setTabs(newTabs.length > 0 ? newTabs : [{
+      name: 'API 1',
+      api: {
+        method: 'GET',
+        url: '',
+        headers: [{ key: '', value: '' }],
+        queryParams: [{ key: '', value: '' }],
+        body: '',
+      },
+      conversation: {
+        evaluations: [],
+        outputKeys: [],
+        outputValues: [],
+        result: null,
+        latency: { startTime: null, latency: null },
+      },
+      apiResponse: null,
+    }]);
+    setActiveTabIndex(0);
+  }, []);
 
-  useEffect(() => {
-    if (rows.length === 0) {
-      addConversationRow();  // Add a default conversation row when the component first loads
-    }
-  
-    if (location.state && location.state.selectedGroup) {
-      handleGroupSelect(location.state.selectedGroup);
-    }
-  }, []);  // Add rows.length as a dependency
-  
+  const createTabFromInput = (input, index) => ({
+    name: `API ${index + 1}`,
+    api: {
+      method: input.method || 'GET',
+      url: input.url || '',
+      headers: Object.entries(input.headers || {}).map(([key, value]) => ({ key, value })),
+      queryParams: Object.entries(input.query_params || {}).map(([key, value]) => ({ key, value })),
+      body: input.content || '',
+    },
+    conversation: {
+      evaluations: input.checks ? input.checks.map(check => check.rule) : [],
+      phrases: input.checks ? input.checks.map(check => check.value) : [],
+      outputKeys: input.checks ? input.checks.map(check => check.field) : [],
+      outputValues: [],
+      result: null,
+      latency: { startTime: null, latency: null },
+    },
+    apiResponse: null,
+    uuid: input.uuid,
+    description: input.description || '',
+    groupId: input.groupId || '',
+  });
 
-  const handleEvaluate = async (index) => {
-    const row = rows[index];
-  
-    try {
-      let content = row.apiResponse ? row.apiResponse.body : {};
-  
-      const checks = row.conversation.evaluations.map((evaluation, idx) => ({
-        field: row.conversation.outputKeys[idx] || '',
-        rule: evaluation,
-        value: row.conversation.phrases[idx]
-      }));
-  
-      const response = await authFetch('api/test-inputs', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          inputType: "text",
-          content,
-          checks
-        }),
-      });
-  
-      if (response) {
-        setRows(prev => {
-          const newRows = [...prev];
-          newRows[index].conversation.result = response.test_result;
-          return newRows;
-        });
-      } else {
-        console.error('Failed to evaluate the test');
-      }
-    } catch (error) {
-      console.error('Error during evaluation:', error);
-    }
-  };
-  const handleApiResponse = useCallback((rowIndex, apiData) => {
-    setRows(prev => {
-      const newRows = [...prev];
-      newRows[rowIndex] = {
-        ...newRows[rowIndex],
+  const handleApiResponse = useCallback((tabIndex, apiData) => {
+    setTabs(prevTabs => {
+      const newTabs = [...prevTabs];
+      newTabs[tabIndex] = {
+        ...newTabs[tabIndex],
         api: {
           method: apiData.method,
           url: apiData.url,
@@ -110,46 +125,90 @@ const RestEvaluationComponent = () => {
         },
         apiResponse: apiData.response,
       };
-      return newRows;
+      return newTabs;
     });
   }, []);
 
-  const handleSave = (index) => {
-    if (!user) {
+  const handleApiChange = useCallback((tabIndex, field, value) => {
+    setTabs(prevTabs => {
+      if (tabIndex >= prevTabs.length) {
+        console.error('Invalid tab index');
+        return prevTabs;
+      }
+      const newTabs = [...prevTabs];
+      if (!newTabs[tabIndex].api) {
+        newTabs[tabIndex].api = {};
+      }
+      newTabs[tabIndex].api[field] = value;
+      return newTabs;
+    });
+  }, []);
+
+  const setOutputValue = useCallback((tabIndex, key, value) => {
+    setTabs(prevTabs => {
+      const newTabs = [...prevTabs];
+      const tab = newTabs[tabIndex];
+      const conversation = tab.conversation;
+  
+      // Update or add the output value
+      const outputIndex = conversation.outputKeys.findIndex(k => k === key);
+      if (outputIndex !== -1) {
+        conversation.outputValues[outputIndex] = value;
+      } else {
+        conversation.outputKeys.push(key);
+        conversation.outputValues.push(value);
+      }
+  
+      // Update or add the evaluation
+      const evalIndex = conversation.evaluations.findIndex(e => e.key === key);
+      if (evalIndex !== -1) {
+        conversation.evaluations[evalIndex] = { ...conversation.evaluations[evalIndex], key, value };
+      } else {
+        conversation.evaluations.push({ key, rule: 'Exact Match', value });
+      }
+  
+      return newTabs;
+    });
+  }, []);
+
+  const handleSave = async (tabIndex) => {
+    if (!userId) {
       setShowSignInModal(true);
       return;
     }
-    setCurrentSavingIndex(index);
+    setCurrentSavingIndex(tabIndex);
+    setDescription(tabs[tabIndex].description || '');
+    setSelectedGroupId(tabs[tabIndex].groupId || '');
+    setIsUpdate(!!tabs[tabIndex].uuid);
     setShowSaveModal(true);
   };
 
   const handleSaveConfirm = async () => {
     if (currentSavingIndex === null) return;
-    const row = rows[currentSavingIndex];
+    const tab = tabs[currentSavingIndex];
 
     const data = {
       description: description, // From the modal
       inputType: "text",
-      content: JSON.stringify(row.api?.body || {}),
+      content: JSON.stringify(tab.api?.body || {}),
       projectId,
       groupId: selectedGroupId || null, // From the modal dropdown
-      checks: row.conversation.evaluations.map((evaluation, idx) => ({
-        field: row.conversation.outputKeys[idx] || '',
-        rule: evaluation,
-        value: row.conversation.phrases[idx]
+      checks: tab.conversation.evaluations.map(evaluation => ({
+        field: evaluation.key,
+        rule: evaluation.rule,
+        value: evaluation.value
       })),
-      // sequence: currentSavingIndex + 1,
-      url: row.api?.url || '',
+      url: tab.api?.url || '',
       apiType: "REST",
-      method: row.api?.method || 'GET',
-      headers: row.api?.headers || {},
-      query_params: row.api?.queryParams || {},
+      method: tab.api?.method || 'GET',
+      headers: tab.api?.headers || {},
+      query_params: tab.api?.queryParams || {},
       content_type: "json"
     };
 
     try {
-      const response = await authFetch('api/inputs', {
-        method: 'POST',
+      const response = await authFetch(isUpdate ? `api/inputs/${tab.uuid}` : 'api/inputs', {
+        method: isUpdate ? 'PUT' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(data),
       });
@@ -158,55 +217,52 @@ const RestEvaluationComponent = () => {
         setDescription('');
         setShowSaveModal(false);
         setCurrentSavingIndex(null);
-        alert('Test saved successfully');
+        alert(isUpdate ? 'Test updated successfully' : 'Test saved successfully');
+        setTabs(prevTabs => {
+          const newTabs = [...prevTabs];
+          newTabs[currentSavingIndex] = {
+            ...newTabs[currentSavingIndex],
+            description: description,
+            groupId: selectedGroupId,
+            uuid: isUpdate ? tab.uuid : response.uuid // Assuming the API returns the new UUID for created tests
+          };
+          return newTabs;
+        });
       } else {
-        alert('Failed to save the test', error);
+        alert(isUpdate ? 'Failed to update the test' : 'Failed to save the test');
       }
     } catch (error) {
-      console.error('Error saving test:', error);
+      console.error(isUpdate ? 'Error updating test:' : 'Error saving test:', error);
     }
-  };
-
-  const handleUpdate = (index) => {
-    if (!user) {
-      setShowSignInModal(true);
-      return;
-    }
-    const row = rows[index];
-    setCurrentSavingIndex(index);
-    setDescription(row.description || ''); // Set the description from the existing test
-    setSelectedGroupId(row.groupId || null); // Set the group ID from the existing test
-    setShowSaveModal(true);
   };
 
   const handleUpdateConfirm = async () => {
     if (currentSavingIndex === null) return;
 
-    const row = rows[currentSavingIndex];
+    const tab = tabs[currentSavingIndex];
 
     const data = {
-        description: description || '', // Use a fallback if description is undefined
+        description: description || '',
         inputType: "text",
-        content: JSON.stringify(row.api?.body || {}),
+        content: JSON.stringify(tab.api?.body || {}),
         projectId,
-        groupId: selectedGroupId || null, // Use a fallback if selectedGroupId is undefined
-        checks: (row.conversation.evaluations || []).map((evaluation, idx) => ({
-            field: row.conversation.outputKeys?.[idx] || '',  // Use optional chaining to prevent undefined errors
-            rule: evaluation || 'exact_match',  // Default to 'exact_match' if evaluation is undefined
-            value: row.conversation.phrases?.[idx] || '',  // Use optional chaining to prevent undefined errors
+        groupId: selectedGroupId || null,
+        checks: (tab.conversation.evaluations || []).map((evaluation, idx) => ({
+            field: tab.conversation.outputKeys?.[idx] || '',
+            rule: evaluation || 'exact_match',
+            value: tab.conversation.phrases?.[idx] || '',
         })),
-        sequence: currentSavingIndex + 1,
-        url: row.api?.url || '',
+        url: tab.api?.url || '',
         apiType: "REST",
-        method: row.api?.method || 'GET',
-        headers: row.api?.headers || {},
-        query_params: row.api?.queryParams || {},
+        method: tab.api?.method || 'GET',
+        headers: tab.api?.headers || {},
+        query_params: tab.api?.queryParams || {},
         content_type: "json"
     };
 
     try {
-        const response = await authFetch(`api/inputs/${row.uuid}`, {
-            method: 'PUT', // PUT for update
+        const response = await authFetch(`api/inputs/${tab.uuid}`, {
+            method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data),
         });
@@ -222,314 +278,114 @@ const RestEvaluationComponent = () => {
     } catch (error) {
         console.error('Error updating test:', error);
     }
-};
-
-  const handleTextSelect = (text) => {
-    clearConversationRows();
-    loadTextAsConversationRow(text);
-  };
-  
-  const loadTextAsConversationRow = (text) => {
-    const checks = text.checks || {};
-    const conditions = Object.entries(checks).map(([key, value]) => ({
-      evaluationType: evaluationMapping[key] || 'exact_match',
-      phrase: value,
-    }));
-    
-    setRows([{
-      api: {
-        method: 'GET',
-        url: text.url || '',
-        headers: text.headers ? Object.entries(text.headers).map(([key, value]) => ({ key, value })) : [],
-        queryParams: text.query_params ? Object.entries(text.query_params).map(([key, value]) => ({ key, value })) : [],
-        body: '',
-      },
-      uuid: text.uuid,
-      description: text.description || '',
-      groupId: text.groupId || null,
-      conditions,
-      outputValue:'',
-      outputKey: text.content || '',
-      result: null,
-      latency: { startTime: null, latency: null },
-    }]);
   };
 
-  const handleConditionChange = useCallback((rowIndex, conditionIndex, field, value) => {
-    setRows(prev => {
-      const newRows = [...prev];
-      newRows[rowIndex].conditions[conditionIndex][field] = value;
-      return newRows;
-    });
-  }, []);
-
-  const handleDeleteRow = (index) => {
-    setRows(prev => prev.filter((_, i) => i !== index));
-  };
-
-  const handleDeleteCondition = (rowIndex, conditionIndex) => {
-    setRows(prev => {
-      const newRows = [...prev];
-      const conversation = newRows[rowIndex].conversation;
+  const handleEvaluate = async (tabIndex) => {
+    const tab = tabs[tabIndex];
+    const evaluations = tab.conversation.evaluations;
+    const apiResponse = tab.apiResponse;
   
-      if (conversation && conversation.outputKeys && conversation.outputValues && conversation.evaluations) {
-        // Remove the condition at the specific index
-        conversation.outputKeys.splice(conditionIndex, 1);
-        conversation.outputValues.splice(conditionIndex, 1);
-        conversation.evaluations.splice(conditionIndex, 1);
-        
-        // Remove the phrase associated with the condition, if it exists
-        if (conversation.phrases) {
-          conversation.phrases.splice(conditionIndex, 1);
-        }
-  
-        // Update the conversation in the row
-        newRows[rowIndex].conversation = conversation;
-      }
-  
-      return newRows;
-    });
-  };
-  
-
-  const handleSetOutputValue = useCallback((rowIndex, key, value) => {
-    setRows(prevRows => {
-      const newRows = [...prevRows];
-      
-      // Ensure the conversation object and relevant arrays are initialized
-      if (!newRows[rowIndex].conversation) {
-        newRows[rowIndex].conversation = {};
-      }
-      if (!Array.isArray(newRows[rowIndex].conversation.outputKeys)) {
-        newRows[rowIndex].conversation.outputKeys = [];
-      }
-      if (!Array.isArray(newRows[rowIndex].conversation.outputValues)) {
-        newRows[rowIndex].conversation.outputValues = [];
-      }
-      if (!Array.isArray(newRows[rowIndex].conversation.evaluations)) {
-        newRows[rowIndex].conversation.evaluations = [];
-      }
-      if (!Array.isArray(newRows[rowIndex].conversation.phrases)) {
-        newRows[rowIndex].conversation.phrases = [];
-      }
-  
-      // Always create a new entry
-      const newIndex = newRows[rowIndex].conversation.outputKeys.length;
-      newRows[rowIndex].conversation.outputKeys[newIndex] = key;
-      newRows[rowIndex].conversation.outputValues[newIndex] = value;
-      newRows[rowIndex].conversation.evaluations[newIndex] = 'exact_match'; // Or the default evaluation type
-      newRows[rowIndex].conversation.phrases[newIndex] = ''; // Or the default phrase value
-      
-      return newRows;
-    });
-  }, []);
-  
-  const onDragEnd = (result) => {
-    if (!result.destination) {
+    if (!apiResponse) {
+      alert('No API response to evaluate. Please send a request first.');
       return;
     }
-
-    const items = Array.from(rows);
-    const [reorderedItem] = items.splice(result.source.index, 1);
-    items.splice(result.destination.index, 0, reorderedItem);
-
-    setRows(items);
-  };
-
-  const clearConversationRows = () => {
-    setRows([]);
-  };
-
-  // const handleApiResponse = (response) => {
-  //   setApiResponse(response);
-  // };
-
-  const addConversationRow = useCallback(() => {
-
-    setRows(prev => [
-      ...prev,
-      {
-        api: {
-          method: 'GET',
-          url: '',
-          headers: [{ key: '', value: '' }],
-          queryParams: [{ key: '', value: '' }],
-          body: '',
-        },
-        conditions: [],
-        outputKey: '',
-        outputValue: '',
-        result: null,
-        latency: { startTime: null, latency: null },
-        apiResponse: null,
+  
+    if (!evaluations || evaluations.length === 0) {
+      alert('No evaluations to perform. Please add at least one evaluation.');
+      return;
+    }
+  
+    const results = evaluations.map(evaluation => {
+      if (!evaluation.key) {
+        return false; // Skip evaluation if key is not defined
       }
-    ]);
-  }, []);
-
-  const addCondition = useCallback((rowIndex) => {
-    setRows(prevRows => {
-      const newRows = [...prevRows];
-      if (!newRows[rowIndex].conversation) {
-        newRows[rowIndex].conversation = {};
-      }
-      if (!Array.isArray(newRows[rowIndex].conversation.evaluations)) {
-        newRows[rowIndex].conversation.evaluations = [];
-      }
-      if (!Array.isArray(newRows[rowIndex].conversation.phrases)) {
-        newRows[rowIndex].conversation.phrases = [];
-      }
-      if (!Array.isArray(newRows[rowIndex].conversation.fields)) {
-        newRows[rowIndex].conversation.fields = [];
-      }
-      if (!Array.isArray(newRows[rowIndex].conversation.outputKeys)) {
-        newRows[rowIndex].conversation.outputKeys = [];
-      }
-      if (!Array.isArray(newRows[rowIndex].conversation.outputValues)) {
-        newRows[rowIndex].conversation.outputValues = [];
-      }
-      newRows[rowIndex].conversation.evaluations.push('equals');
-      newRows[rowIndex].conversation.phrases.push('');
-      newRows[rowIndex].conversation.fields.push('');
-      newRows[rowIndex].conversation.outputKeys.push('');
-      newRows[rowIndex].conversation.outputValues.push('');
-      return newRows;
+      const actualValue = getValueFromPath(apiResponse.body, evaluation.key);
+      return evaluateCondition(actualValue, evaluation.rule, evaluation.value);
     });
-  }, []);
-
-  const handlePhraseChange = useCallback((index, conditionIndex, value) => {
-    setRows(prev => {
-      const newRows = [...prev];
-      newRows[index].conversation.phrases[conditionIndex] = value;
-      return newRows;
+  
+    setTabs(prevTabs => {
+      const newTabs = [...prevTabs];
+      newTabs[tabIndex].conversation.result = results.every(r => r) ? 'pass' : 'fail';
+      return newTabs;
     });
-  }, []);
-
-  const handleTextGroupSelect = (group) => {
-    clearConversationRows(); // Clear any existing rows
-    group.inputs.forEach(input => {
-      const newRow = createConversationRowFromInput(input);
-      setRows(prevRows => [...prevRows, ...newRow]);
-    });
-};
-
-
-const createConversationRowFromInput = (input) => {
-
-  if (input.uuid) {
-    setIsUpdate(true); // Set isUpdate to true when creating a new row
-  } else {
-    setIsUpdate(false); // Set isUpdate to false when creating a new row
-  }
-  const apiDetails = {
-      method: input.method || 'GET',
-      url: input.url || '',
-      headers: Object.entries(input.headers || {}).map(([key, value]) => ({ key, value })),
-      queryParams: Object.entries(input.query_params || {}).map(([key, value]) => ({ key, value })),
-      body: input.content || '',  // This maps to the request body
-      contentType: input.content_type,
+  
+    alert(`Evaluation complete. ${results.filter(r => r).length} out of ${results.length} checks passed.`);
   };
 
-  const newRow = {
-      api: apiDetails,
-      conversation: {
-          evaluations: [],
-          phrases: [],
-          outputValues: [],
-          outputKeys: [],
-          result: null,
-          latency: { startTime: null, latency: null },
-      },
-      uuid: input.uuid,
-      description: input.description || '',
-      groupId: input.groupId || '',
+  // Helper functions for evaluation
+  const getValueFromPath = (obj, path) => {
+    if (!path) return undefined;
+    return path.split('.').reduce((acc, part) => acc && acc[part], obj);
   };
 
-  input.checks.forEach(check => {
-      newRow.conversation.evaluations.push(check.rule);
-      newRow.conversation.phrases.push(check.value);
-      newRow.conversation.outputKeys.push(check.field);
-  });
+  const evaluateCondition = (actual, rule, expected) => {
+    switch (rule) {
+      case 'Exact Match':
+        return actual === expected;
+      case 'Contains':
+        return String(actual).includes(expected);
+      case 'Begins With':
+        return String(actual).startsWith(expected);
+      case 'Ends With':
+        return String(actual).endsWith(expected);
+      case 'Word Count':
+        return String(actual).split(/\s+/).length === Number(expected);
+      case 'Less Than':
+        return Number(actual) < Number(expected);
+      // Add more conditions as needed
+      default:
+        return false;
+    }
+  };
 
-  return [newRow];
-};
 
-  return (
-    <div className="evaluation-container">
-      <TestGroupSidebar 
-        testGroups={[]}
-        onSelectGroup={handleGroupSelect}
-        projectId={projectId}
-        authFetch={authFetch} 
-        userId={userId}
-        onInputSelect={handleTextSelect}
-        onGroupSelect={handleGroupSelect}
-        onTextGroupSelect={handleTextGroupSelect} // Pass the new handler 
-        componentType={'text'}
+return (
+  <div className="evaluation-container">
+    <TestGroupSidebar 
+      testGroups={[]}
+      onSelectGroup={handleGroupSelect}
+      projectId={projectId}
+      authFetch={authFetch} 
+      userId={userId}
+      onInputSelect={(input) => handleGroupSelect({ inputs: [input] })}
+      onGroupSelect={handleGroupSelect}
+      onTextGroupSelect={handleGroupSelect}
+      componentType={'text'}
+    />
+
+    <div className="evaluation-component">
+      <ApiTabs
+        tabs={tabs}
+        setTabs={setTabs}
+        activeTabIndex={activeTabIndex}
+        setActiveTabIndex={setActiveTabIndex}
+        handleApiResponse={handleApiResponse}
+        setOutputValue={setOutputValue}
+        handleApiChange={handleApiChange}
+        handleSave={handleSave}
+        handleEvaluate={handleEvaluate}
       />
 
-      <div className="evaluation-component">
-        <hr />
-        <div className="transcript-box">
-          <button className="add-row-button" onClick={addConversationRow}>+ New API</button>
-
-          <DragDropContext onDragEnd={onDragEnd}>
-            <StrictModeDroppable droppableId="droppable-conversations">
-              {(provided) => (
-                <div
-                  {...provided.droppableProps}
-                  ref={provided.innerRef}
-                  className="conversations"
-                >
-                  {rows.map((rowData, index) => (
-                    <Draggable key={`row-${index}`} draggableId={`row-${index}`} index={index}>
-                      {(provided) => (
-                        <ConversationRow
-                          ref={provided.innerRef}
-                          draggableProps={provided.draggableProps}
-                          dragHandleProps={provided.dragHandleProps}
-                          rowIndex={index}
-                          rowData={rowData}
-                          setRows={setRows}
-                          handlePhraseChange={handlePhraseChange}
-                          handleDeleteRow={handleDeleteRow}
-                          handleDeleteCondition={handleDeleteCondition}
-                          addCondition={addCondition}
-                          handleEvaluate={handleEvaluate}
-                          handleSave={handleSave}
-                          setOutputValue={handleSetOutputValue}
-                          handleApiResponse={handleApiResponse}
-                          handleUpdate={handleUpdate} // Pass the handleUpdate function
-                          isUpdate={isUpdate} // Pass the isUpdate state
-                        />
-                      )}
-                    </Draggable>
-                  ))}
-                  {provided.placeholder}
-                </div>
-              )}
-            </StrictModeDroppable>
-          </DragDropContext>
-        </div>
-        <SaveTestModal
-          showModal={showSaveModal}
-          setShowModal={setShowSaveModal}
-          description={description}
-          setDescription={setDescription}
-          isUpdate={isUpdate} // Pass the isUpdate state
-          groupOptions={groupOptions}
-          selectedGroupId={selectedGroupId}
-          setSelectedGroupId={setSelectedGroupId}
-          saveTest={handleSaveConfirm}
-          updateTest={handleUpdateConfirm}
-        />
-        <SignInModal
-          showSignInModal={showSignInModal}
-          setShowSignInModal={setShowSignInModal}
-          signIn={signIn}
-        />
-      </div>
+      <SaveTestModal
+        showModal={showSaveModal}
+        setShowModal={setShowSaveModal}
+        description={description}
+        setDescription={setDescription}
+        isUpdate={isUpdate}
+        groupOptions={groupOptions}
+        selectedGroupId={selectedGroupId}
+        setSelectedGroupId={setSelectedGroupId}
+        saveTest={handleSaveConfirm}
+        updateTest={handleUpdateConfirm}
+      />
+      <SignInModal
+        showSignInModal={showSignInModal}
+        setShowSignInModal={setShowSignInModal}
+        signIn={signIn}
+      />
     </div>
-  );
+  </div>
+);
 };
 
 export default RestEvaluationComponent;
